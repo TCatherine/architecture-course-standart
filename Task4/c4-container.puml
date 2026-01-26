@@ -1,0 +1,50 @@
+@startuml
+title Container Diagram
+
+top to bottom direction
+
+!includeurl https://raw.githubusercontent.com/RicardoNiepel/C4-PlantUML/master/C4_Container.puml
+
+AddElementTag("legacy", $bgColor="#eeeeee", $fontColor="#444444", $borderColor="#999999")
+AddElementTag("microservice", $bgColor="#1168bd", $fontColor="white")
+AddElementTag("database", $bgColor="#2f9bc1", $fontColor="white")
+AddElementTag("storage", $shape=RoundedBoxShape(), $bgColor="#f08e3e", $fontColor="white")
+
+
+Person(cc_mngr, "Call-center manager")
+Person(pcc_mngr, "Partner Call-center manager")
+
+
+System_Boundary(abc, "АБС") {
+    Container(abs, "АБС (Core Banking)", "Proprietary", "Главная учетная система банка", $tags="legacy")
+    ContainerDb(abs_db, "ABS Database", "Oracle/MS SQL", "Содержит таблицу очереди СМС", $tags="legacy")
+    Container(cc_adapter, "Call Center Adapter", ".NET 8 Worker", "Слушает БД АБС и по API уведомляет сервис об изменениях", $tags="microservice")
+    
+    Rel(abs, abs_db, "Reads/Writes", "ADO.NET/EF")
+    Rel(cc_adapter, abs_db, "Polls: Новые события", "SQL SELECT")
+}
+
+System_Boundary(cc_system, "Сервис call-center") {
+    Container(cc_web, "WEB Interface", "React.js", $tags="legacy")
+    Container(cc_backend, "Backend", "Java Spring Boot", $tags="legacy")
+    Container(cc_db, "PostgreSQL", $tags="legacy")
+    Container(cc_kafka, "Kafka", $tags="microservice")
+    Container(partner_export_service, "Partner Export Service", "Java Spring Boot", "Планировщик, который формирует CSV/XML и отправляет на SFTP.", $tags="microservice")
+    
+    Rel(cc_web, cc_backend, "Обработка событий для call-center", "HTTPS")
+    Rel(cc_backend, cc_db, "Получение и обновление состояние", "SQL SELECT")
+    Rel(cc_backend, cc_kafka, "Запрос на формирование файла для партнеров", "Kafka Client")
+    Rel(cc_kafka, partner_export_service, "Получениие запросов на формирование и отправку", "Kafka Client")
+    Container(smtp_server, "SMTP Service", $tags="microservice")
+}
+
+System(pcc_system, "Сервис call-center партнера")
+
+
+Rel(cc_mngr, cc_web, "Работа со системой", "Веб-интерфейс")
+Rel(pcc_mngr, pcc_system, "Работа со системой", "Веб-интерфейс")
+
+Rel(cc_adapter, cc_backend, "Уведомление системы об изменении", "HTTPS")
+Rel(partner_export_service, smtp_server, "Уведомление системы об изменении", "HTTPS")
+Rel(pcc_system, smtp_server, "Получение информации о ставках", "SMTP")
+@enduml

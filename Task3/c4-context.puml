@@ -1,0 +1,28 @@
+@startuml
+title Standart Context Diagram
+
+top to bottom direction
+
+!includeurl https://raw.githubusercontent.com/RicardoNiepel/C4-PlantUML/master/C4_Component.puml
+
+Person(client, "Client", "Клиенты")
+Person(dbo_manager, "back-office manager (deposit)")
+Person(cbo_manager, "back-office manager (credit)")
+System(site, "Site")
+System(online_bank, "Online bank")
+System_Ext(operator, "Telecom operator")
+
+System(abc, "АБС")
+System(sms_gateway, "sms-gateway")
+System(sms_center, "sms center")
+
+Rel(client, site, "Просмотр акутальных и персональных ставок и открытие депозита")
+Rel(dbo_manager, abc, "Обработка заявки")
+Rel(cbo_manager, abc, "Анализ текущего уровеня кредитного риска для банка ")
+Rel(site, online_bank, "Клиент-серверная архитектура")
+Rel(abc, sms_center, "Для отправки различных смс-сообщений")
+Rel(sms_center, sms_gateway, "Для отправки различных смс-сообщений")
+Rel(online_bank, abc, "Для получения банковской информации")
+Rel(sms_gateway, operator, "Отправка смс-сообщение клиенту")
+Rel(operator, client, "Отправка смс-сообщение клиенту")
+@enduml
