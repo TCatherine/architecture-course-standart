@@ -1,0 +1,56 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+AddElementTag("webapp", $bgColor="#1168bd", $fontColor="white")
+AddElementTag("internal", $bgColor="#1168bd", $fontColor="white", $shape=RoundedBoxShape())
+AddElementTag("db", $bgColor="#2f9bc1", $fontColor="white")
+AddElementTag("async", $bgColor="#558855", $fontColor="white", $legendText="Night Process")
+AddElementTag("sync", $bgColor="#b32d2d", $fontColor="white", $legendText="Day Process")
+
+title C4 Container: Асинхронный расчет предложений (CQRS)
+
+System_Boundary(dmz, "Интернет-банк") {
+   Container(api_gateway, "Api gateway", "Nginx", "Маршрутизирует запосы по кредису", $tags="webapp")
+    Container(credit_app_svc, "Credit App Service", ".NET 8", "Витрина и Заявки", $tags="webapp")
+    
+    ContainerDb(offers_db, "Offers Cache DB", "PostgreSQL / Redis", "Хранит готовые Pre-approved предложения для быстрого показа", $tags="db")
+    
+    Container(kafka, "Kafka", "Broker", "Events", $tags="existing")
+}
+
+
+System_Boundary(scoring_zone, "Scoring Zone") {
+    
+    Container(scoring_engine, "Scoring Engine", ".NET 8 / Python", "Scalable 24/7 Cluster", $tags="internal")
+    ContainerDb(scoring_db, "Scoring DB", "PostgreSQL", "Исторические данные", $tags="db")
+    
+    Container(scheduler, "Nightly Batch Job", "Worker Service", "Инициирует массовый пересчет", $tags="internal")
+    
+}
+
+System_Boundary(abc, "АБС") {
+    
+    Container(abs_adapter, "ABS Adapter", ".NET 8", "Real-time шлюз в АБС", $tags="existing")
+    Container(abs, "АБС", "Legacy", "Core Banking", $tags="existing")
+}
+
+' НОЧНОЙ ПРОЦЕСС (Зеленый)
+Rel(scheduler, scoring_engine, "Batch Calculation (Night)", "gRPC", $tags="async")
+Rel(scoring_engine, kafka, "Publish: Обновляет предложения (Night)", "Event", $tags="async")
+Rel(kafka, credit_app_svc, "Consume: Сохраняет в кеш (Night)", "", $tags="async")
+Rel(credit_app_svc, offers_db, "Обновляет предложения (Night)", "SQL", $tags="async")
+
+' ДНЕВНОЙ ПРОЦЕСС (Красный)
+Person(client, "Клиент")
+Rel(client, api_gateway, "Смотрит предложения по кредиту и принимает", "HTTPS", $tags="sync")
+Rel(api_gateway, credit_app_svc, "Маршрутизирует запросы от клиента", "HTTPS", $tags="sync")
+Rel(credit_app_svc, offers_db, "Читает предложения из кеша (Day) ", "SQL (Fast)", $tags="sync")
+
+Rel(credit_app_svc, scoring_engine, "Финальная проверка (Day)", "gRPC", $tags="sync")
+Rel(credit_app_svc, kafka, "Publish: CreditDisburse (Day)", "Event", $tags="sync")
+
+' ИНТЕГРАЦИЯ С АБС (Bypass Daily Batch)
+Rel(kafka, abs_adapter, "Consume: CreditDisburse", "", $tags="sync")
+Rel(abs_adapter, abs, "Создание контракта", "Native", $tags="sync")
+
+@enduml

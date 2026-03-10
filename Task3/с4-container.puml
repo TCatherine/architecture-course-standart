@@ -1,0 +1,92 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+' НАСТРОЙКИ СТИЛЯ
+SHOW_PERSON_OUTLINE()
+AddElementTag("legacy", $bgColor="#eeeeee", $fontColor="#444444", $borderColor="#999999")
+AddElementTag("microservice", $bgColor="#1168bd", $fontColor="white")
+AddElementTag("database", $bgColor="#2f9bc1", $fontColor="white")
+AddElementTag("storage", $shape=RoundedBoxShape(), $bgColor="#f08e3e", $fontColor="white")
+
+title C4 Container Diagram
+
+' ДЕЙСТВУЮЩИЕ ЛИЦА
+Person(client, "Клиент", "Пользователь интернет-банка")
+Person(staff, "Сотрудник Бэк-офиса", "Обрабатывает заявки в АБС")
+
+' ГРАНИЦЫ СИСТЕМЫ
+System_Boundary(site_system, "Контур Сайта") {
+    Container(site, "Сайт", "PHP и React.js", $tags="legacy")
+}
+
+System_Boundary(ib_system, "Контур Интернет-Банка") {
+
+    ' БАЛАНСИРОВЩИК
+    Container(nginx, "API Gateway / Load Balancer", "Маршрутизация трафика, SSL Termination", $tags="microservice")
+
+    ' LEGACY ЧАСТЬ
+    Boundary(legacy_zone, "Legacy Zone (.NET 4.5)") {
+        Container(monolith, "Monolith Internet Bank", "ASP.NET MVC 4.5", "Платежи, карты, старый функционал", $tags="legacy")
+        ContainerDb(legacy_db, "Monolith DB", "MS SQL Server", "Хранение данных монолита", $tags="legacy")
+    }
+
+    ' MODERN ЧАСТЬ
+    Boundary(modern_zone, "Modern Zone (.NET 8)") {
+        Container(deposit_service, "Deposit Service", ".NET 8 Web API", "Управление депозитами, ставки, заявки", $tags="microservice")
+        ContainerDb(deposit_db, "Deposit DB", "PostgreSQL", "Заявки на депозиты, справочник ставок", $tags="database")
+    }
+
+    ' ШИНА ДАННЫХ
+    Container(kafka, "Message Broker", "Apache Kafka", "Асинхронный обмен событиями", $tags="storage")
+}
+
+' КОНТУР БАНКА (Внутренняя сеть)
+System_Boundary(bank_internal, "Внутренняя сеть Банка") {
+    Container(abs, "АБС (Core Banking)", "Proprietary", "Главная учетная система банка", $tags="legacy")
+    ContainerDb(abs_db, "ABS Database", "Oracle/MS SQL", "Содержит таблицу очереди СМС", $tags="legacy")
+    
+    Container(adapter, "ABS Integration Adapter", ".NET 8 Worker", "Слушает БД АБС и публикует события в Kafka для интернет-банка", $tags="microservice")
+   Container(notification_adapter, "Notification Adapter", ".NET 8 Worker", "Слушает БД АБС и публикует события в Kafka для событий уведомлений", $tags="microservice")
+}
+
+' КОНТУР СЕРВИСА НОТИФИКАЦИЙ (Внутренняя сеть)
+System_Boundary(sms_center, "Центр уведомлений") {
+    Container(sms_service, "SMS Service", Главная учетная система банка", $tags="microservice")
+    ContainerDb(sms_db, "SMS Database", "Oracle/MS SQL", "Содержит таблицу очереди СМС", $tags="legacy")
+    
+    Container(adapter, "ABS Integration Adapter", ".NET 8 Worker", "Слушает БД АБС и публикует события в Kafka", $tags="microservice")
+    Container(notification_kafka, "Message Broker", "Apache Kafka", "Асинхронный обмен событиями", $tags="storage")
+}
+
+' СВЯЗИ (RELATIONSHIPS)
+
+' Клиент
+Rel(client, site, "HTTPS", "Заходит на сайт банк")
+Rel(client, nginx, "HTTPS / Браузер", "Заходит в банк")
+Rel(site, nginx, "HTTPS", "Заходит на сайт банк")
+Rel(nginx, monolith, "Проксирует /payments, /cards", "HTTPS")
+Rel(nginx, deposit_service, "Проксирует /deposits", "HTTPS")
+
+' Монолит
+Rel(monolith, legacy_db, "Reads/Writes", "ADO.NET/EF")
+
+' Сервис Депозитов
+Rel(deposit_service, deposit_db, "Reads/Writes", "EF Core")
+Rel(deposit_service, kafka, "Publishes: DepositCreated", "Kafka Client")
+
+' АБС и Интеграция
+Rel(staff, abs, "Работает с заявками", "Desktop App")
+Rel(abs, abs_db, "Пишет в таблицу очереди", "SQL INSERT")
+Rel(adapter, abs_db, "Polls: Новые события", "SQL SELECT")
+Rel(adapter, kafka, "Publishes: Новые событий", "Kafka Client")
+Rel(notification_adapter, abs_db, "Polls: Новые события", "SQL SELECT")
+Rel(notification_adapter, notification_kafka, "Subscribes: Новые события уведомлений", "Kafka Client")
+
+' Сервис нотификаций
+Rel(sms_service, notification_kafka, "Publishes: DepositCreated", "Kafka Client")
+Rel(sms_service, sms_db, "Пишет в таблицу информацию об отправках", "SQL INSERT")
+
+' Интеграция данных по заявкам (опционально для полноты)
+Rel(kafka, adapter, "Consumes: DepositCreated", "Чтобы создать заявку в АБС")
+Rel(adapter, abs, "Создает заявку (через шлюз или БД)", "Internal Protocol")
+@enduml

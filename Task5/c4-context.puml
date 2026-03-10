@@ -1,0 +1,23 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title C4 Context: Кредитный процесс (Выделенный Скоринг)
+
+Person(client, "Клиент", "Пользователь интернет-банка")
+
+System(ib_system, "Интернет-Банк", "Канал взаимодействия с клиентом")
+
+System(scoring_system, "Scoring Engine", "Система принятия решений")
+
+System_Ext(bki, "Бюро Кредитных Историй")
+System(abs, "АБС (Core Banking)", "Учет и Главная книга")
+
+Rel(client, ib_system, "Подает заявку")
+Rel(ib_system, scoring_system, "Запрашивает оценку заемщика")
+
+Rel(scoring_system, bki, "Запрашивает историю")
+Rel(scoring_system, abs, "Проверяет наличие просрочек в своем банке")
+
+Rel(ib_system, abs, "Инициирует выдачу денег (после одобрения)")
+
+@enduml
